@@ -5,6 +5,9 @@
 <title>Shift QR Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
+<!-- JSZip -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
 :root{
   --bg:#0b1020;
@@ -90,7 +93,6 @@ button{
   display:flex;
   align-items:center;
   justify-content:space-between;
-  gap:8px;
 }
 .copy-btn{
   background:transparent;
@@ -115,12 +117,6 @@ button{
   color:#fff;
 }
 
-.footer{
-  margin-top:30px;
-  text-align:center;
-  color:var(--muted);
-  font-size:12px;
-}
 .toast{
   position:fixed;
   bottom:20px;
@@ -148,13 +144,10 @@ button{
   <button class="primary" onclick="generateAll()">⚡ Generate All QR</button>
   <button class="secondary" onclick="resetTomorrow()">♻ Reset (Tomorrow)</button>
   <button class="secondary" onclick="addShift()">➕ Ajouter Shift</button>
+  <button class="secondary" onclick="downloadAllZIP()">⬇ Download ZIP (All QR)</button>
 </div>
 
 <div class="grid" id="grid"></div>
-
-<div class="footer">
-  QR contains readable text – CMH System
-</div>
 
 <div class="toast" id="toast">Copied ✔️</div>
 
@@ -270,6 +263,29 @@ async function downloadQR(url,name){
   const a=document.createElement("a");
   a.href=URL.createObjectURL(b);
   a.download=name;
+  a.click();
+}
+
+async function downloadAllZIP(){
+  const zip = new JSZip();
+  const folder = zip.folder("QR_Shifts_" + dateFR(DATE).replaceAll("/","-"));
+  const cards = document.querySelectorAll(".card");
+
+  for(const card of cards){
+    const img = card.querySelector("img");
+    const label = card.querySelector(".time").innerText;
+    const fileName = `Shift_${label.replace(/\s+/g,"").replace("→","-")}_${dateFR(DATE).replaceAll("/","-")}.png`;
+
+    const res = await fetch(img.src);
+    const blob = await res.blob();
+    const buf = await blob.arrayBuffer();
+    folder.file(fileName, buf);
+  }
+
+  const content = await zip.generateAsync({type:"blob"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(content);
+  a.download=`All_QR_Shifts_${dateFR(DATE).replaceAll("/","-")}.zip`;
   a.click();
 }
 
