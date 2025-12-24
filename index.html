@@ -83,7 +83,7 @@ function dateForDisplay(d){
   return `${dd}/${m}/${y}`; // 24/12/2025
 }
 function buildCode(date, group){
-  return `CMH-${dateForCode(date)}-G${group}-${randToken()}`;
+  return `CMH-${dateForCode(date)}-${group}-${randToken()}`;
 }
 function qrURLText(text){
   return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="
@@ -124,7 +124,7 @@ function createShift(data={}){
 
   div.innerHTML=`
     <div class="row">
-      <input placeholder="Groupe" value="${data.group || '7'}">
+      <input placeholder="Groupe" value="${data.group || 'one time trans'}">
       <input type="date" value="${data.date || ''}">
     </div>
     <div class="row">
