@@ -82,34 +82,24 @@ button{
   height:190px;
 }
 
-.code-row{
+.code{
   width:100%;
   background:#0b1020;
   border-radius:12px;
-  padding:10px 12px;
+  padding:10px;
   font-family:monospace;
   font-size:13px;
-  margin-bottom:14px;
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
+  margin-bottom:12px;
+  text-align:center;
 }
-.copy-btn{
-  background:transparent;
-  border:0;
-  color:var(--muted);
-  cursor:pointer;
-  font-size:16px;
-}
-.copy-btn:hover{color:#fff}
 
 .actions{
-  display:grid;
-  grid-template-columns:repeat(2,1fr);
-  gap:8px;
+  display:flex;
+  gap:10px;
   width:100%;
 }
 .actions button{
+  flex:1;
   padding:8px;
   border-radius:10px;
   font-size:12px;
@@ -144,15 +134,14 @@ button{
   <button class="primary" onclick="generateAll()">⚡ Generate All QR</button>
   <button class="secondary" onclick="resetTomorrow()">♻ Reset (Tomorrow)</button>
   <button class="secondary" onclick="addShift()">➕ Ajouter Shift</button>
-  <button class="secondary" onclick="downloadAllZIP()">⬇ Download ZIP (All QR)</button>
+  <button class="secondary" onclick="downloadAllZIP()">⬇ Download ZIP</button>
 </div>
 
 <div class="grid" id="grid"></div>
 
-<div class="toast" id="toast">Copied ✔️</div>
+<div class="toast" id="toast">QR + Code copied ✔️</div>
 
 <script>
-/* ================= DATA ================= */
 let SHIFTS = [
   { label:"09:00 → 17:00", start:"09:00", end:"17:00" },
   { label:"11:00 → 19:00", start:"11:00", end:"19:00" },
@@ -160,7 +149,6 @@ let SHIFTS = [
 ];
 let DATE = tomorrow();
 
-/* ================= HELPERS ================= */
 function tomorrow(){
   const d=new Date(); d.setDate(d.getDate()+1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -173,11 +161,7 @@ function rand(){
   return Math.random().toString(36).substring(2,8).toUpperCase();
 }
 function qrURL(text){
-  return "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
-    + encodeURIComponent(text);
-}
-function shiftFileName(label){
-  return `Shift_${label.replace(/\s+/g,"").replace("→","-")}_${dateFR(DATE).replaceAll("/","-")}.png`;
+  return "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="+encodeURIComponent(text);
 }
 function toast(){
   const t=document.getElementById("toast");
@@ -185,18 +169,13 @@ function toast(){
   setTimeout(()=>t.classList.remove("show"),1200);
 }
 
-/* ================= RENDER ================= */
 const grid=document.getElementById("grid");
 
 function render(){
   grid.innerHTML="";
   SHIFTS.forEach((s,i)=>{
     const code=`CMH-${DATE.replaceAll("-","")}-S${i+1}-${rand()}`;
-    const text=
-`CMH SHIFT
-Date: ${dateFR(DATE)}
-Shift: ${s.start} → ${s.end}
-Code: ${code}`;
+    const text=`CMH SHIFT | ${dateFR(DATE)} | ${s.start}→${s.end} | ${code}`;
 
     const card=document.createElement("div");
     card.className="card";
@@ -205,56 +184,59 @@ Code: ${code}`;
       <div class="date">📅 ${dateFR(DATE)}</div>
 
       <div class="qr-box">
-        <img src="${qrURL(text)}" crossorigin="anonymous">
+        <img src="${qrURL(text)}">
       </div>
 
-      <div class="code-row">
-        <span>${code}</span>
-        <button class="copy-btn" onclick="copyCode('${code}')">📋</button>
-      </div>
+      <div class="code">${code}</div>
 
       <div class="actions">
-        <button onclick="copyQRImage(this)">🖼 Copy QR</button>
-        <button onclick="downloadQR('${qrURL(text)}','${shiftFileName(s.label)}')">⬇ Download</button>
+        <button onclick="copyQRWithCode(this)">📋 Copy</button>
+        <button onclick="downloadQR('${qrURL(text)}','${code}.png')">⬇ Download</button>
       </div>
     `;
     grid.appendChild(card);
   });
 }
 
-/* ================= ACTIONS ================= */
+async function copyQRWithCode(btn){
+  const card = btn.closest(".card");
+  const img = card.querySelector("img");
+  const code = card.querySelector(".code").innerText;
+
+  const baseImg = await fetch(img.src).then(r=>r.blob());
+  const bitmap = await createImageBitmap(baseImg);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height + 40;
+
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  ctx.drawImage(bitmap,0,0);
+
+  ctx.fillStyle="#000";
+  ctx.font="16px monospace";
+  ctx.textAlign="center";
+  ctx.fillText(code, canvas.width/2, bitmap.height + 28);
+
+  const finalBlob = await new Promise(res=>canvas.toBlob(res));
+
+  await navigator.clipboard.write([
+    new ClipboardItem({ "image/png": finalBlob })
+  ]);
+
+  toast();
+}
+
 function generateAll(){ render(); }
-
-function resetTomorrow(){
-  DATE = tomorrow();
-  SHIFTS = [
-    { label:"09:00 → 17:00", start:"09:00", end:"17:00" },
-    { label:"11:00 → 19:00", start:"11:00", end:"19:00" },
-    { label:"16:00 → 00:00", start:"16:00", end:"00:00" },
-  ];
-  render();
-}
-
+function resetTomorrow(){ DATE = tomorrow(); render(); }
 function addShift(){
-  const start = prompt("Start time (HH:MM)", "08:00");
-  if(!start) return;
-  const end = prompt("End time (HH:MM)", "16:00");
-  if(!end) return;
-  SHIFTS.push({ label:`${start} → ${end}`, start, end });
+  const s=prompt("Start HH:MM","08:00"); if(!s)return;
+  const e=prompt("End HH:MM","16:00"); if(!e)return;
+  SHIFTS.push({label:`${s} → ${e}`,start:s,end:e});
   render();
-}
-
-function copyCode(c){
-  navigator.clipboard.writeText(c);
-  toast();
-}
-
-async function copyQRImage(btn){
-  const img = btn.closest(".card").querySelector("img");
-  const res = await fetch(img.src);
-  const blob = await res.blob();
-  await navigator.clipboard.write([ new ClipboardItem({ [blob.type]: blob }) ]);
-  toast();
 }
 
 async function downloadQR(url,name){
@@ -267,29 +249,21 @@ async function downloadQR(url,name){
 }
 
 async function downloadAllZIP(){
-  const zip = new JSZip();
-  const folder = zip.folder("QR_Shifts_" + dateFR(DATE).replaceAll("/","-"));
-  const cards = document.querySelectorAll(".card");
-
-  for(const card of cards){
-    const img = card.querySelector("img");
-    const label = card.querySelector(".time").innerText;
-    const fileName = `Shift_${label.replace(/\s+/g,"").replace("→","-")}_${dateFR(DATE).replaceAll("/","-")}.png`;
-
-    const res = await fetch(img.src);
-    const blob = await res.blob();
-    const buf = await blob.arrayBuffer();
-    folder.file(fileName, buf);
+  const zip=new JSZip();
+  const folder=zip.folder("QR_Shifts");
+  for(const card of document.querySelectorAll(".card")){
+    const img=card.querySelector("img");
+    const code=card.querySelector(".code").innerText;
+    const b=await fetch(img.src).then(r=>r.blob());
+    folder.file(code+".png", b);
   }
-
-  const content = await zip.generateAsync({type:"blob"});
+  const z=await zip.generateAsync({type:"blob"});
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(content);
-  a.download=`All_QR_Shifts_${dateFR(DATE).replaceAll("/","-")}.zip`;
+  a.href=URL.createObjectURL(z);
+  a.download="All_QR_Shifts.zip";
   a.click();
 }
 
-/* INIT */
 render();
 </script>
 
