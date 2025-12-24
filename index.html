@@ -7,234 +7,157 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
-body{
-  background:#050a18;
-  color:#e7eefc;
-  font-family:Arial, sans-serif;
-  padding:20px;
-}
+body{background:#050a18;color:#e7eefc;font-family:Arial;padding:20px}
 h2{margin-bottom:10px}
-button{
-  background:#4b7bff;
-  color:#fff;
-  border:0;
-  border-radius:10px;
-  padding:8px 12px;
-  cursor:pointer;
-  font-weight:600;
-}
+button{background:#4b7bff;color:#fff;border:0;border-radius:10px;padding:8px 12px;cursor:pointer;font-weight:600}
 .secondary{background:#27355f}
-#shifts{max-width:900px}
-.shift{
-  background:#0f1933;
-  border:1px solid #1f2b4a;
-  border-radius:14px;
-  padding:14px;
-  margin-bottom:12px;
-  cursor:grab;
-}
+.danger{background:#a12b2b}
+#shifts{max-width:950px}
+.shift{background:#0f1933;border:1px solid #1f2b4a;border-radius:14px;padding:14px;margin-bottom:12px;cursor:grab}
 .shift.dragging{opacity:.4}
 .row{display:flex;gap:8px;margin-bottom:8px}
-input{
-  background:#070c1a;
-  border:1px solid #2b3a61;
-  border-radius:10px;
-  padding:8px;
-  color:#fff;
-  width:100%;
-}
-img{
-  width:170px;
-  height:170px;
-  background:#fff;
-  border-radius:10px;
-  padding:6px;
-}
+input{background:#070c1a;border:1px solid #2b3a61;border-radius:10px;padding:8px;color:#fff;width:100%}
+img{width:170px;height:170px;background:#fff;border-radius:10px;padding:6px}
 .small{font-size:12px;opacity:.8}
-.code{
-  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
+.code{font-family:ui-monospace,monospace}
 </style>
 </head>
 
 <body>
 
 <h2>Shift QR Generator</h2>
-<button onclick="addShift()">➕ Ajouter un shift</button>
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+  <button onclick="addShift()">➕ Ajouter un shift</button>
+  <button class="secondary" onclick="seed3IfEmpty(true)">↺ Reset (3 shifts – tomorrow)</button>
+</div>
 
-<div id="shifts"></div>
+<div id="shifts" style="margin-top:14px"></div>
 
 <script>
-/* ================== CONFIG ================== */
-const STORAGE_KEY = "cmh_shifts_saved_text_qr";
-const shiftsEl = document.getElementById("shifts");
-let dragEl = null;
+const STORAGE_KEY="cmh_shifts_saved_text_qr_v4";
+const shiftsEl=document.getElementById("shifts");
+let dragEl=null;
 
-/* ================== HELPERS ================== */
+/* Helpers */
 function randToken(len=6){
   const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let o="";
-  for(let i=0;i<len;i++) o+=c[Math.floor(Math.random()*c.length)];
-  return o;
+  return Array.from({length:len},()=>c[Math.floor(Math.random()*c.length)]).join("");
 }
-function dateForCode(d){ return d.replaceAll("-",""); } // 2025-12-24 → 20251224
-function dateForDisplay(d){
-  const [y,m,dd]=d.split("-");
-  return `${dd}/${m}/${y}`; // 24/12/2025
+function tomorrowISO(){
+  const d=new Date(); d.setDate(d.getDate()+1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-function buildCode(date, group){
-  return `CMH-${dateForCode(date)}-${group}-${randToken()}`;
-}
+function dateFR(d){const [y,m,dd]=d.split("-");return `${dd}/${m}/${y}`}
+function buildCode(date,group){return `CMH-${date.replaceAll("-","")}-G${group}-${randToken()}`}
 function qrURLText(text){
-  return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="
-    + encodeURIComponent(text);
+  return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="+encodeURIComponent(text);
 }
-function shiftFileName(group, date, start, end){
-  const [y,m,d] = date.split("-");
-  const dateFR = `${d}-${m}-${y}`;
-  const startFR = start.replace(":", "h");
-  const endFR   = end.replace(":", "h");
-  return `Shift_Groupe${group}_${dateFR}_${startFR}-${endFR}.png`;
+function shiftFileName(name,group,date,start,end){
+  const [y,m,d]=date.split("-");
+  return `Shift_${name.replace(/\s+/g,"_")}_G${group}_${d}-${m}-${y}_${start.replace(":","h")}-${end.replace(":","h")}.png`;
 }
 
-/* ================== STORAGE ================== */
+/* Storage */
 function save(){
-  const data=[...shiftsEl.children].map(card=>{
-    const i=card.querySelectorAll("input");
-    return {
-      group:i[0].value,
-      date:i[1].value,
-      start:i[2].value,
-      end:i[3].value,
-      code:i[4].value
-    };
+  const data=[...shiftsEl.children].map(c=>{
+    const i=c.querySelectorAll("input");
+    return {name:i[0].value,group:i[1].value,date:i[2].value,start:i[3].value,end:i[4].value,code:i[5].value};
   });
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
 }
 function load(){
-  const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
-  data.forEach(s => shiftsEl.appendChild(createShift(s)));
+  JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]")
+    .forEach(s=>shiftsEl.appendChild(createShift(s)));
 }
 
-/* ================== SHIFT CARD ================== */
+/* Shift card */
 function createShift(data={}){
   const div=document.createElement("div");
-  div.className="shift";
-  div.draggable=true;
+  div.className="shift"; div.draggable=true;
+  const date=data.date||tomorrowISO();
 
   div.innerHTML=`
     <div class="row">
-      <input placeholder="Groupe" value="${data.group || 'one time trans'}">
-      <input type="date" value="${data.date || ''}">
+      <input placeholder="Shift name" value="${data.name||'Shift'}">
+      <input placeholder="Group" value="${data.group||'7'}">
+      <input type="date" value="${date}">
     </div>
     <div class="row">
-      <input type="time" value="${data.start || '09:00'}">
-      <input type="time" value="${data.end || '17:00'}">
+      <input type="time" value="${data.start||'09:00'}">
+      <input type="time" value="${data.end||'17:00'}">
     </div>
     <div class="row">
-      <input class="code" readonly value="${data.code || ''}">
+      <input class="code" readonly value="${data.code||''}">
       <button class="secondary gen">QR</button>
-      <button class="secondary dl">⬇ Télécharger</button>
+      <button class="secondary dl">⬇</button>
+      <button class="danger rm">🗑</button>
     </div>
     <div class="row">
-      <img alt="QR">
-      <div class="small">Drag ↑ ↓</div>
+      <img alt="QR"><div class="small">Drag ↑ ↓</div>
     </div>
   `;
 
-  const i = div.querySelectorAll("input");
-  const img = div.querySelector("img");
+  const i=div.querySelectorAll("input");
+  const img=div.querySelector("img");
 
   function generate(){
-    if(!i[1].value) return alert("Veuillez choisir une date");
-    if(!i[4].value) i[4].value = buildCode(i[1].value, i[0].value);
-
-    const text =
-`CMH SHIFT
-Group: ${i[0].value}
-Date: ${dateForDisplay(i[1].value)}
-Shift: ${i[2].value} → ${i[3].value}
-Code: ${i[4].value}`;
-
-    img.src = qrURLText(text);
-    save();
+    if(!i[5].value) i[5].value=buildCode(i[2].value,i[1].value);
+    const text=`CMH SHIFT
+Name: ${i[0].value}
+Group: ${i[1].value}
+Date: ${dateFR(i[2].value)}
+Shift: ${i[3].value} → ${i[4].value}
+Code: ${i[5].value}`;
+    img.src=qrURLText(text); save();
   }
 
   async function downloadQR(){
-    if(!img.src){
-      alert("Generate QR first");
-      return;
-    }
-    try{
-      const res = await fetch(img.src);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-
-      const filename = shiftFileName(
-        i[0].value,
-        i[1].value,
-        i[2].value,
-        i[3].value
-      );
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }catch(e){
-      console.error(e);
-      alert("Download failed ❌");
-    }
+    const res=await fetch(img.src); const blob=await res.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=shiftFileName(i[0].value,i[1].value,i[2].value,i[3].value,i[4].value);
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
   }
 
-  div.querySelector(".gen").onclick = generate;
-  div.querySelector(".dl").onclick = downloadQR;
+  div.querySelector(".gen").onclick=generate;
+  div.querySelector(".dl").onclick=downloadQR;
+  div.querySelector(".rm").onclick=()=>{div.remove();save()};
+  i.forEach(x=>x.onchange=save);
 
-  // Save on change
-  i.forEach(inp => inp.onchange = () => save());
-
-  /* Drag & Drop */
-  div.addEventListener("dragstart",()=>{
-    dragEl = div;
-    div.classList.add("dragging");
-  });
-  div.addEventListener("dragend",()=>{
-    dragEl = null;
-    div.classList.remove("dragging");
-    save();
-  });
+  div.addEventListener("dragstart",()=>{dragEl=div;div.classList.add("dragging")});
+  div.addEventListener("dragend",()=>{dragEl=null;div.classList.remove("dragging");save()});
   div.addEventListener("dragover",e=>{
     e.preventDefault();
     const cards=[...shiftsEl.querySelectorAll(".shift:not(.dragging)")];
-    const after = cards.find(c=>{
-      const r=c.getBoundingClientRect();
-      return e.clientY < r.top + r.height/2;
-    });
-    if(after) shiftsEl.insertBefore(dragEl, after);
-    else shiftsEl.appendChild(dragEl);
+    const after=cards.find(c=>e.clientY<c.getBoundingClientRect().top+c.getBoundingClientRect().height/2);
+    after?shiftsEl.insertBefore(dragEl,after):shiftsEl.appendChild(dragEl);
   });
 
-  // Auto-generate if loaded data
-  if(data.date){
-    if(!data.code) i[4].value = buildCode(i[1].value, i[0].value);
-    generate();
-  }
-
+  generate();
   return div;
 }
 
-/* ================== MAIN ================== */
-function addShift(){
-  shiftsEl.appendChild(createShift());
+/* Default 3 shifts (your times) */
+function seed3IfEmpty(force=false){
+  if(!force && JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]").length) return;
+  shiftsEl.innerHTML="";
+  const d=tomorrowISO();
+  [
+    {name:"Shift 1",group:"7",date:d,start:"09:00",end:"17:00"},
+    {name:"Shift 2",group:"7",date:d,start:"11:00",end:"19:00"},
+    {name:"Shift 3",group:"7",date:d,start:"16:00",end:"00:00"},
+  ].forEach(s=>shiftsEl.appendChild(createShift(s)));
   save();
 }
 
-/* INIT */
-load();
-if(!shiftsEl.children.length) addShift();
+/* Main */
+function addShift(){
+  shiftsEl.appendChild(createShift({name:"Shift",group:"7",date:tomorrowISO(),start:"09:00",end:"17:00"}));
+  save();
+}
+load(); seed3IfEmpty(false);
 </script>
 
 </body>
