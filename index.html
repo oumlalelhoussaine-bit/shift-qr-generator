@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Language" content="fr">
+<title>Shift QR Generator</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{
+  background:#050a18;
+  color:#e7eefc;
+  font-family:Arial, sans-serif;
+  padding:20px;
+}
+h2{margin-bottom:10px}
+button{
+  background:#4b7bff;
+  color:#fff;
+  border:0;
+  border-radius:10px;
+  padding:8px 12px;
+  cursor:pointer;
+  font-weight:600;
+}
+.secondary{background:#27355f}
+#shifts{max-width:900px}
+.shift{
+  background:#0f1933;
+  border:1px solid #1f2b4a;
+  border-radius:14px;
+  padding:14px;
+  margin-bottom:12px;
+  cursor:grab;
+}
+.shift.dragging{opacity:.4}
+.row{display:flex;gap:8px;margin-bottom:8px}
+input{
+  background:#070c1a;
+  border:1px solid #2b3a61;
+  border-radius:10px;
+  padding:8px;
+  color:#fff;
+  width:100%;
+}
+img{
+  width:160px;
+  height:160px;
+  background:#fff;
+  border-radius:10px;
+  padding:6px;
+}
+.small{font-size:12px;opacity:.8}
+</style>
+</head>
+
+<body>
+
+<h2>Shift QR Generator</h2>
+<button onclick="addShift()">➕ Ajouter un shift</button>
+
+<div id="shifts"></div>
+
+<script>
+/* ================== CONFIG ================== */
+const STORAGE_KEY = "cmh_shifts_saved";
+
+/* ================== HELPERS ================== */
+function randToken(len=6){
+  const c="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let o="";
+  for(let i=0;i<len;i++) o+=c[Math.floor(Math.random()*c.length)];
+  return o;
+}
+function dateForCode(d){
+  return d.replaceAll("-","");        // 2025-12-24 → 20251224
+}
+function dateForDisplay(d){
+  const [y,m,dd]=d.split("-");
+  return `${dd}/${m}/${y}`;           // 24/12/2025
+}
+function buildCode(date, group){
+  return `CMH-${dateForCode(date)}-G${group}-${randToken()}`;
+}
+function qrURL(payload){
+  return "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data="
+    + encodeURIComponent(JSON.stringify(payload));
+}
+
+/* ================== STORAGE ================== */
+function save(){
+  const data=[...document.querySelectorAll(".shift")].map(s=>{
+    const i=s.querySelectorAll("input");
+    return {
+      group:i[0].value,
+      date:i[1].value,
+      start:i[2].value,
+      end:i[3].value,
+      code:i[4].value
+    };
+  });
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+function load(){
+  const data=JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");
+  data.forEach(d=>document.getElementById("shifts").appendChild(createShift(d)));
+}
+
+/* ================== SHIFT CARD ================== */
+let dragEl=null;
+function createShift(data={}){
+  const div=document.createElement("div");
+  div.className="shift";
+  div.draggable=true;
+
+  div.innerHTML=`
+    <div class="row">
+      <input placeholder="Groupe" value="${data.group||'7'}">
+      <input type="date" value="${data.date||''}">
+    </div>
+    <div class="row">
+      <input type="time" value="${data.start||'09:00'}">
+      <input type="time" value="${data.end||'17:00'}">
+    </div>
+    <div class="row">
+      <input class="code" readonly value="${data.code||''}">
+      <button class="secondary gen">QR</button>
+      <button class="secondary dl">⬇ Télécharger</button>
+    </div>
+    <div class="row">
+      <img>
+      <div class="small">Drag ↑ ↓</div>
+    </div>
+  `;
+
+  const i=div.querySelectorAll("input");
+  const img=div.querySelector("img");
+
+  function generate(){
+    if(!i[1].value) return alert("Veuillez choisir une date");
+    if(!i[4].value) i[4].value=buildCode(i[1].value,i[0].value);
+
+    const payload={
+      group:i[0].value,
+      date:dateForDisplay(i[1].value),
+      shift:{start:i[2].value,end:i[3].value},
+      code:i[4].value
+    };
+
+    img.src=qrURL(payload);
+    save();
+  }
+
+  div.querySelector(".gen").onclick=generate;
+
+  div.querySelector(".dl").onclick=()=>{
+    const a=document.createElement("a");
+    a.href=img.src;
+    a.download=`QR_Group${i[0].value}_${dateForCode(i[1].value)}_${i[4].value}.png`;
+    a.click();
+  };
+
+  i.forEach(x=>x.onchange=save);
+
+  /* Drag & Drop */
+  div.addEventListener("dragstart",()=>{dragEl=div;div.classList.add("dragging")});
+  div.addEventListener("dragend",()=>{dragEl=null;div.classList.remove("dragging");save()});
+  div.addEventListener("dragover",e=>{
+    e.preventDefault();
+    const after=[...div.parentNode.children].find(c=>{
+      const r=c.getBoundingClientRect();
+      return e.clientY < r.top+r.height/2;
+    });
+    if(after) div.parentNode.insertBefore(dragEl,after);
+    else div.parentNode.appendChild(dragEl);
+  });
+
+  if(data.code) generate();
+  return div;
+}
+
+/* ================== MAIN ================== */
+function addShift(){
+  document.getElementById("shifts").appendChild(createShift());
+  save();
+}
+
+/* INIT */
+load();
+if(!document.querySelector(".shift")) addShift();
+</script>
+
+</body>
+</html>
