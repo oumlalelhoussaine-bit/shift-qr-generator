@@ -51,7 +51,9 @@ img{
   padding:6px;
 }
 .small{font-size:12px;opacity:.8}
-.code{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+.code{
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
 </style>
 </head>
 
@@ -64,7 +66,7 @@ img{
 
 <script>
 /* ================== CONFIG ================== */
-const STORAGE_KEY = "cmh_shifts_saved_v2";
+const STORAGE_KEY = "cmh_shifts_saved_text_qr";
 const shiftsEl = document.getElementById("shifts");
 let dragEl = null;
 
@@ -83,19 +85,15 @@ function dateForDisplay(d){
 function buildCode(date, group){
   return `CMH-${dateForCode(date)}-G${group}-${randToken()}`;
 }
-function qrURL(payload){
+function qrURLText(text){
   return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="
-    + encodeURIComponent(JSON.stringify(payload));
+    + encodeURIComponent(text);
 }
 function shiftFileName(group, date, start, end){
-  // date: 2025-12-24 → 24-12-2025
   const [y,m,d] = date.split("-");
   const dateFR = `${d}-${m}-${y}`;
-
-  // time: 09:00 → 09h00
   const startFR = start.replace(":", "h");
   const endFR   = end.replace(":", "h");
-
   return `Shift_Groupe${group}_${dateFR}_${startFR}-${endFR}.png`;
 }
 
@@ -151,14 +149,14 @@ function createShift(data={}){
     if(!i[1].value) return alert("Veuillez choisir une date");
     if(!i[4].value) i[4].value = buildCode(i[1].value, i[0].value);
 
-    const payload = {
-      group: i[0].value,
-      date: dateForDisplay(i[1].value),
-      shift: { start: i[2].value, end: i[3].value },
-      code: i[4].value
-    };
+    const text =
+`CMH SHIFT
+Group: ${i[0].value}
+Date: ${dateForDisplay(i[1].value)}
+Shift: ${i[2].value} → ${i[3].value}
+Code: ${i[4].value}`;
 
-    img.src = qrURL(payload);
+    img.src = qrURLText(text);
     save();
   }
 
@@ -167,17 +165,16 @@ function createShift(data={}){
       alert("Generate QR first");
       return;
     }
-
     try{
       const res = await fetch(img.src);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
 
       const filename = shiftFileName(
-        i[0].value, // group
-        i[1].value, // date (YYYY-MM-DD)
-        i[2].value, // start
-        i[3].value  // end
+        i[0].value,
+        i[1].value,
+        i[2].value,
+        i[3].value
       );
 
       const a = document.createElement("a");
@@ -196,12 +193,8 @@ function createShift(data={}){
   div.querySelector(".gen").onclick = generate;
   div.querySelector(".dl").onclick = downloadQR;
 
-  // Save on changes
-  i.forEach(inp => inp.onchange = () => { 
-    // إذا بدّل user group/date/time نخلي code يتعاود يتولد فقط إلا بغيت
-    // هنا كنخلي code كما هو باش ما يتبدلش بلا طلب
-    save();
-  });
+  // Save on change
+  i.forEach(inp => inp.onchange = () => save());
 
   /* Drag & Drop */
   div.addEventListener("dragstart",()=>{
@@ -224,7 +217,7 @@ function createShift(data={}){
     else shiftsEl.appendChild(dragEl);
   });
 
-  // Auto-generate إذا كانت بيانات قديمة فيها code أو date
+  // Auto-generate if loaded data
   if(data.date){
     if(!data.code) i[4].value = buildCode(i[1].value, i[0].value);
     generate();
