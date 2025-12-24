@@ -44,13 +44,14 @@ input{
   width:100%;
 }
 img{
-  width:160px;
-  height:160px;
+  width:170px;
+  height:170px;
   background:#fff;
   border-radius:10px;
   padding:6px;
 }
 .small{font-size:12px;opacity:.8}
+.code{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
 </style>
 </head>
 
@@ -63,7 +64,9 @@ img{
 
 <script>
 /* ================== CONFIG ================== */
-const STORAGE_KEY = "cmh_shifts_saved";
+const STORAGE_KEY = "cmh_shifts_saved_v2";
+const shiftsEl = document.getElementById("shifts");
+let dragEl = null;
 
 /* ================== HELPERS ================== */
 function randToken(len=6){
@@ -72,25 +75,34 @@ function randToken(len=6){
   for(let i=0;i<len;i++) o+=c[Math.floor(Math.random()*c.length)];
   return o;
 }
-function dateForCode(d){
-  return d.replaceAll("-","");        // 2025-12-24 → 20251224
-}
+function dateForCode(d){ return d.replaceAll("-",""); } // 2025-12-24 → 20251224
 function dateForDisplay(d){
   const [y,m,dd]=d.split("-");
-  return `${dd}/${m}/${y}`;           // 24/12/2025
+  return `${dd}/${m}/${y}`; // 24/12/2025
 }
 function buildCode(date, group){
   return `CMH-${dateForCode(date)}-G${group}-${randToken()}`;
 }
 function qrURL(payload){
-  return "https://api.qrserver.com/v1/create-qr-code/?size=220x220&data="
+  return "https://api.qrserver.com/v1/create-qr-code/?size=240x240&data="
     + encodeURIComponent(JSON.stringify(payload));
+}
+function shiftFileName(group, date, start, end){
+  // date: 2025-12-24 → 24-12-2025
+  const [y,m,d] = date.split("-");
+  const dateFR = `${d}-${m}-${y}`;
+
+  // time: 09:00 → 09h00
+  const startFR = start.replace(":", "h");
+  const endFR   = end.replace(":", "h");
+
+  return `Shift_Groupe${group}_${dateFR}_${startFR}-${endFR}.png`;
 }
 
 /* ================== STORAGE ================== */
 function save(){
-  const data=[...document.querySelectorAll(".shift")].map(s=>{
-    const i=s.querySelectorAll("input");
+  const data=[...shiftsEl.children].map(card=>{
+    const i=card.querySelectorAll("input");
     return {
       group:i[0].value,
       date:i[1].value,
@@ -102,12 +114,11 @@ function save(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 function load(){
-  const data=JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");
-  data.forEach(d=>document.getElementById("shifts").appendChild(createShift(d)));
+  const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+  data.forEach(s => shiftsEl.appendChild(createShift(s)));
 }
 
 /* ================== SHIFT CARD ================== */
-let dragEl=null;
 function createShift(data={}){
   const div=document.createElement("div");
   div.className="shift";
@@ -115,79 +126,122 @@ function createShift(data={}){
 
   div.innerHTML=`
     <div class="row">
-      <input placeholder="Groupe" value="${data.group||'7'}">
-      <input type="date" value="${data.date||''}">
+      <input placeholder="Groupe" value="${data.group || '7'}">
+      <input type="date" value="${data.date || ''}">
     </div>
     <div class="row">
-      <input type="time" value="${data.start||'09:00'}">
-      <input type="time" value="${data.end||'17:00'}">
+      <input type="time" value="${data.start || '09:00'}">
+      <input type="time" value="${data.end || '17:00'}">
     </div>
     <div class="row">
-      <input class="code" readonly value="${data.code||''}">
+      <input class="code" readonly value="${data.code || ''}">
       <button class="secondary gen">QR</button>
       <button class="secondary dl">⬇ Télécharger</button>
     </div>
     <div class="row">
-      <img>
+      <img alt="QR">
       <div class="small">Drag ↑ ↓</div>
     </div>
   `;
 
-  const i=div.querySelectorAll("input");
-  const img=div.querySelector("img");
+  const i = div.querySelectorAll("input");
+  const img = div.querySelector("img");
 
   function generate(){
     if(!i[1].value) return alert("Veuillez choisir une date");
-    if(!i[4].value) i[4].value=buildCode(i[1].value,i[0].value);
+    if(!i[4].value) i[4].value = buildCode(i[1].value, i[0].value);
 
-    const payload={
-      group:i[0].value,
-      date:dateForDisplay(i[1].value),
-      shift:{start:i[2].value,end:i[3].value},
-      code:i[4].value
+    const payload = {
+      group: i[0].value,
+      date: dateForDisplay(i[1].value),
+      shift: { start: i[2].value, end: i[3].value },
+      code: i[4].value
     };
 
-    img.src=qrURL(payload);
+    img.src = qrURL(payload);
     save();
   }
 
-  div.querySelector(".gen").onclick=generate;
+  async function downloadQR(){
+    if(!img.src){
+      alert("Generate QR first");
+      return;
+    }
 
-  div.querySelector(".dl").onclick=()=>{
-    const a=document.createElement("a");
-    a.href=img.src;
-    a.download=`QR_Group${i[0].value}_${dateForCode(i[1].value)}_${i[4].value}.png`;
-    a.click();
-  };
+    try{
+      const res = await fetch(img.src);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
 
-  i.forEach(x=>x.onchange=save);
+      const filename = shiftFileName(
+        i[0].value, // group
+        i[1].value, // date (YYYY-MM-DD)
+        i[2].value, // start
+        i[3].value  // end
+      );
 
-  /* Drag & Drop */
-  div.addEventListener("dragstart",()=>{dragEl=div;div.classList.add("dragging")});
-  div.addEventListener("dragend",()=>{dragEl=null;div.classList.remove("dragging");save()});
-  div.addEventListener("dragover",e=>{
-    e.preventDefault();
-    const after=[...div.parentNode.children].find(c=>{
-      const r=c.getBoundingClientRect();
-      return e.clientY < r.top+r.height/2;
-    });
-    if(after) div.parentNode.insertBefore(dragEl,after);
-    else div.parentNode.appendChild(dragEl);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }catch(e){
+      console.error(e);
+      alert("Download failed ❌");
+    }
+  }
+
+  div.querySelector(".gen").onclick = generate;
+  div.querySelector(".dl").onclick = downloadQR;
+
+  // Save on changes
+  i.forEach(inp => inp.onchange = () => { 
+    // إذا بدّل user group/date/time نخلي code يتعاود يتولد فقط إلا بغيت
+    // هنا كنخلي code كما هو باش ما يتبدلش بلا طلب
+    save();
   });
 
-  if(data.code) generate();
+  /* Drag & Drop */
+  div.addEventListener("dragstart",()=>{
+    dragEl = div;
+    div.classList.add("dragging");
+  });
+  div.addEventListener("dragend",()=>{
+    dragEl = null;
+    div.classList.remove("dragging");
+    save();
+  });
+  div.addEventListener("dragover",e=>{
+    e.preventDefault();
+    const cards=[...shiftsEl.querySelectorAll(".shift:not(.dragging)")];
+    const after = cards.find(c=>{
+      const r=c.getBoundingClientRect();
+      return e.clientY < r.top + r.height/2;
+    });
+    if(after) shiftsEl.insertBefore(dragEl, after);
+    else shiftsEl.appendChild(dragEl);
+  });
+
+  // Auto-generate إذا كانت بيانات قديمة فيها code أو date
+  if(data.date){
+    if(!data.code) i[4].value = buildCode(i[1].value, i[0].value);
+    generate();
+  }
+
   return div;
 }
 
 /* ================== MAIN ================== */
 function addShift(){
-  document.getElementById("shifts").appendChild(createShift());
+  shiftsEl.appendChild(createShift());
   save();
 }
 
 /* INIT */
 load();
-if(!document.querySelector(".shift")) addShift();
+if(!shiftsEl.children.length) addShift();
 </script>
 
 </body>
