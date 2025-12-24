@@ -1,0 +1,1 @@
+# shift-qr-generator
